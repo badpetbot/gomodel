@@ -1,0 +1,16 @@
+{
+    "editor.insertSpaces": true,
+    "editor.detectIndentation": false,
+    "editor.tabSize": 2,
+    "editor.formatOnSave": false,
+    "[go]": {
+      "editor.insertSpaces": true,
+      "editor.detectIndentation": false,
+      "editor.tabSize": 2,
+      "editor.formatOnSave": false,
+      "editor.codeActionsOnSave": {
+        "source.organizeImports": false
+      },
+      "editor.suggest.snippetsPreventQuickSuggestions": false
+    }
+}
