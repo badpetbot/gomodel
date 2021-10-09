@@ -21,7 +21,7 @@ const ServerMemberClientName = "main"
 const ServerMemberDBName = "badpetbot"
 
 // ServerMemberColName is the name of the collection to use for ServerMember.
-const ServerMemberColName = "ServerMembers"
+const ServerMemberColName = "server_members"
 
 // ServerMemberCol gets a collection reference for ServerMember.
 func ServerMemberCol() *mgo.Collection {
