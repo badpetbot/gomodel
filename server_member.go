@@ -30,15 +30,20 @@ func ServerMemberCol() *mgo.Collection {
 
 // INDICES:
 // { _id: 1 }
-// { discord_id: 1 }
+// { discord_user_id: 1 }
+// { discord_server_id: 1 }
+// { discord_member_id: 1 }
 
-// ServerMember is a single service ServerMember.
+// ServerMember is a single Discord "guild member". ServerMembers can belong to the same Discord "user" account,
+// but for the purposes of BadPetBot, are considered separate users except for bans.
 type ServerMember struct {
-  // ID left as the standard BSON ID. DiscordID is the Discord "guild member" ID, which is a "snowflake" string.
-  ID        bson.ObjectId             `bson:"_id"                   json:"_id"                    validate:"required"`
-  DiscordID string                    `bson:"discord_id"            json:"discord_id"             validate:"required"`
-  CreatedAt time.Time                 `bson:"created_at"            json:"created_at"             validate:"required"`
-  UpdatedAt time.Time                 `bson:"updated_at"            json:"updated_at"             validate:"required"`
+  // ID is a BSON ID generated in Create.
+  ID                  bson.ObjectId   `bson:"_id"                   json:"_id"                    validate:"required"`
+  DiscordUserID       string          `bson:"discord_user_id"       json:"discord_user_id"        validate:"required"`
+  DiscordServerID     string          `bson:"discord_server_id"     json:"discord_server_id"      validate:"required"`
+  DiscordMemberID     string          `bson:"discord_member_id"     json:"discord_member_id"      validate:"required"`
+  CreatedAt           time.Time       `bson:"created_at"            json:"created_at"             validate:"required"`
+  UpdatedAt           time.Time       `bson:"updated_at"            json:"updated_at"             validate:"required"`
 
   // Ownership relationships
   OwnerDiscordID      string          `bson:"owner_discord_id"      json:"owner_discord_id"       validate:"-"`
