@@ -2,16 +2,19 @@ package gomodel
 
 import (
 
-  // Import builtin packages.
-  "time"
+	// Import builtin packages.
+	"encoding/json"
+	"time"
 
-  // Import 3rd party packages.
-  "github.com/globalsign/mgo"
-  "github.com/globalsign/mgo/bson"
+	// Import 3rd party packages.
+	"github.com/globalsign/mgo"
+	"github.com/globalsign/mgo/bson"
+  "github.com/go-redis/redis"
+  "github.com/rs/zerolog/log"
 
-  // Import internal packages.
-  "github.com/badpetbot/gocommon/net"
-  "github.com/badpetbot/gocommon/validation"
+	// Import internal packages.
+	"github.com/badpetbot/gocommon/net"
+	"github.com/badpetbot/gocommon/validation"
 )
 
 // ServerClientName is the name of the MgoDriver to use for Server.
@@ -22,6 +25,12 @@ const ServerDBName = "badpetbot"
 
 // ServerColName is the name of the collection to use for Server.
 const ServerColName = "servers"
+
+// CacheTTL is the time in seconds documents can remain in cache.
+const CacheTTL = 120*time.Second
+
+// NegCacheTTL is the time in seconds neg-cache can remain in cache.
+const NegCacheTTL = 60*time.Second
 
 // ServerCol gets a collection reference for Server.
 func ServerCol() *mgo.Collection {
@@ -94,6 +103,65 @@ func (this *Server) Validate() error {
 
   // Implement validation rules here.
   return validation.NewValidator().Struct(this)
+}
+
+// CacheGetServer attempts to find a Server by the key and value specified in cache before looking
+// in the database and setting cache if found. If "negCache" is true, will check for neg-cache
+// first, and also set neg-cache if the document wasn't found in the database either.
+func CacheGetServer(key, value string, negCache bool) (*Server, error) {
+
+  client := net.RedisGetClient(ServerClientName)
+  cacheKey := ServerClientName+":"+ServerDBName+":"+ServerColName+":"+key+":"+value
+
+  // Return not-found early if neg-cache exists.
+  if negCache {
+    if result, err := client.Get("neg:"+cacheKey).Result(); err != nil {
+      return nil, err
+    } else if result != "" {
+      return nil, mgo.ErrNotFound
+    }
+  }
+
+  // Return what's in cache if it's found.
+  if result, err := client.Get(cacheKey).Result(); err != nil {
+    return nil, err
+  } else if result != "" {
+    server := new(Server)
+    err = json.Unmarshal([]byte(result), server)
+    return server, err
+  }
+
+  // Get what's in the database.
+  server := new(Server)
+  err := net.MgoCol(ServerClientName, ServerDBName, ServerColName).Find(bson.M{
+    key: value,
+  }).One(server)
+
+  // If it wasn't found and negCache is true, fill neg cache.
+  if err == mgo.ErrNotFound && negCache {
+    go fillNegCacheServer(client, cacheKey)
+
+  // Else if there's no error, fill cache.
+  } else if err != nil {
+    go fillCacheServer(client, cacheKey, server)
+  }
+  return server, err
+}
+
+func fillCacheServer(client *redis.Client, key string, value *Server) {
+  serialized, err := json.Marshal(value)
+  if err != nil {
+    log.Warn().AnErr("fillCache", err).Msgf("Error serializing cache for Server")
+  }
+  if err := client.Set(key, string(serialized), CacheTTL).Err(); err != nil {
+    log.Warn().AnErr("fillCache", err).Msgf("Error filling cache for Server")
+  }
+}
+
+func fillNegCacheServer(client *redis.Client, key string) {
+  if err := client.Set("neg:"+key, "neg", NegCacheTTL).Err(); err != nil {
+    log.Warn().AnErr("fillNegCache", err).Msgf("Error filling neg cache for Server")
+  }
 }
 
 // Misc functions.

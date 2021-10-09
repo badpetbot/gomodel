@@ -21,11 +21,14 @@ package gomodel
 import (
 
   // Import builtin packages.
+  "encoding/json"
   "time"
 
   // Import 3rd party packages.
   "github.com/globalsign/mgo"
   "github.com/globalsign/mgo/bson"
+  "github.com/go-redis/redis"
+  "github.com/rs/zerolog/log"
 
   // Import internal packages.
   "github.com/badpetbot/gocommon/net"
@@ -124,6 +127,67 @@ func (this *ModelTemplate) Validate() error {
 
   // Implement validation rules here.
   return validation.NewValidator().Struct(this)
+}
+
+// Cache functions.
+
+// CacheGetModelTemplate attempts to find a ModelTemplate by the key and value specified in cache before looking
+// in the database and setting cache if found. If "negCache" is true, will check for neg-cache
+// first, and also set neg-cache if the document wasn't found in the database either.
+func CacheGetModelTemplate(key, value string, negCache bool) (*ModelTemplate, error) {
+
+  client := net.RedisGetClient(ModelTemplateClientName)
+  cacheKey := ModelTemplateClientName+":"+ModelTemplateDBName+":"+ModelTemplateColName+":"+key+":"+value
+
+  // Return not-found early if neg-cache exists.
+  if negCache {
+    if result, err := client.Get("neg:"+cacheKey).Result(); err != nil {
+      return nil, err
+    } else if result != "" {
+      return nil, mgo.ErrNotFound
+    }
+  }
+
+  // Return what's in cache if it's found.
+  if result, err := client.Get(cacheKey).Result(); err != nil {
+    return nil, err
+  } else if result != "" {
+    server := new(ModelTemplate)
+    err = json.Unmarshal([]byte(result), server)
+    return server, err
+  }
+
+  // Get what's in the database.
+  server := new(ModelTemplate)
+  err := net.MgoCol(ModelTemplateClientName, ModelTemplateDBName, ModelTemplateColName).Find(bson.M{
+    key: value,
+  }).One(server)
+
+  // If it wasn't found and negCache is true, fill neg cache.
+  if err == mgo.ErrNotFound && negCache {
+    go fillNegCacheModelTemplate(client, cacheKey)
+
+  // Else if there's no error, fill cache.
+  } else if err != nil {
+    go fillCacheModelTemplate(client, cacheKey, server)
+  }
+  return server, err
+}
+
+func fillCacheModelTemplate(client *redis.Client, key string, value *ModelTemplate) {
+  serialized, err := json.Marshal(value)
+  if err != nil {
+    log.Warn().AnErr("fillCache", err).Msgf("Error serializing cache for ModelTemplate")
+  }
+  if err := client.Set(key, string(serialized), CacheTTL).Err(); err != nil {
+    log.Warn().AnErr("fillCache", err).Msgf("Error filling cache for ModelTemplate")
+  }
+}
+
+func fillNegCacheModelTemplate(client *redis.Client, key string) {
+  if err := client.Set("neg:"+key, "neg", NegCacheTTL).Err(); err != nil {
+    log.Warn().AnErr("fillNegCache", err).Msgf("Error filling neg cache for ModelTemplate")
+  }
 }
 
 // Misc functions.
